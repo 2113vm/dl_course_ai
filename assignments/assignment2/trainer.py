@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 import numpy as np
-from metrics import multiclass_accuracy
+from assignments.assignment2.metrics import multiclass_accuracy
 
 
 class Dataset:
@@ -100,17 +100,21 @@ class Trainer:
                 # use model to generate loss and gradients for all
                 # the params
 
-                raise Exception("Not implemented!")
+                X_batch, y_batch = self.dataset.train_X[batch_indices], self.dataset.train_y[batch_indices]
+
+                loss = self.model.compute_loss_and_gradients(X=X_batch, y=y_batch)
 
                 for param_name, param in self.model.params().items():
                     optimizer = self.optimizers[param_name]
+                    # print(param_name, param.value.sum())
                     param.value = optimizer.update(param.value, param.grad, self.learning_rate)
+                    # print(param_name, param.value.sum())
 
                 batch_losses.append(loss)
 
             if np.not_equal(self.learning_rate_decay, 1.0):
                 # TODO: Implement learning rate decay
-                raise Exception("Not implemented!")
+                self.learning_rate *= self.learning_rate_decay
 
             ave_loss = np.mean(batch_losses)
 
@@ -128,3 +132,41 @@ class Trainer:
             val_acc_history.append(val_accuracy)
 
         return loss_history, train_acc_history, val_acc_history
+
+
+if __name__ == '__main__':
+    import numpy as np
+
+    from assignments.assignment2.dataset import load_svhn, random_split_train_val
+    from assignments.assignment2.gradient_check import check_layer_gradient, check_layer_param_gradient, check_model_gradient
+    from assignments.assignment2.layers import FullyConnectedLayer, ReLULayer
+    from assignments.assignment2.model import TwoLayerNet
+    # from assignments.assignment2.trainer import Trainer, Dataset
+    from assignments.assignment2.optim import SGD, MomentumSGD
+    from assignments.assignment2.metrics import multiclass_accuracy
+
+
+    def prepare_for_neural_network(train_X, test_X):
+        train_flat = train_X.reshape(train_X.shape[0], -1).astype(np.float) / 255.0
+        test_flat = test_X.reshape(test_X.shape[0], -1).astype(np.float) / 255.0
+
+        # Subtract mean
+        mean_image = np.mean(train_flat, axis=0)
+        train_flat -= mean_image
+        test_flat -= mean_image
+
+        return train_flat, test_flat
+
+
+    train_X, train_y, test_X, test_y = load_svhn("../assignment1/data", max_train=10000, max_test=1000)
+    train_X, test_X = prepare_for_neural_network(train_X, test_X)
+    # Split train into train and val
+    train_X, train_y, val_X, val_y = random_split_train_val(train_X, train_y, num_val=1000)
+
+    data_size = 15
+    model = TwoLayerNet(n_input=train_X.shape[1], n_output=10, hidden_layer_size=100, reg=1e-1)
+    dataset = Dataset(train_X[:data_size], train_y[:data_size], val_X[:data_size], val_y[:data_size])
+    trainer = Trainer(model, dataset, SGD(), learning_rate=1e-2, num_epochs=1000, batch_size=5)
+
+    # You should expect this to reach 1.0 training accuracy
+    loss_history, train_history, val_history = trainer.fit()

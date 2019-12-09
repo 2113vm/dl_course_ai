@@ -1,5 +1,7 @@
 import numpy as np
 
+from assignments.assignment1.linear_classifer import (cross_entropy_loss, softmax)
+
 
 def l2_regularization(W, reg_strength):
     """
@@ -14,7 +16,9 @@ def l2_regularization(W, reg_strength):
       gradient, np.array same shape as W - gradient of weight by l2 loss
     """
     # TODO: Copy from the previous assignment
-    raise Exception("Not implemented!")
+    loss = reg_strength * np.sum(W * W)
+    grad = reg_strength * 2 * W
+
     return loss, grad
 
 
@@ -34,7 +38,14 @@ def softmax_with_cross_entropy(preds, target_index):
       dprediction, np array same shape as predictions - gradient of predictions by loss value
     """
     # TODO: Copy from the previous assignment
-    raise Exception("Not implemented!")
+    loss = cross_entropy_loss(softmax(preds.copy()), target_index)
+    mask = np.zeros(preds.shape)
+    if hasattr(target_index, '__len__'):
+        mask[np.arange(len(target_index)), target_index.reshape(1, -1)] = 1
+    else:
+        mask[target_index] = 1
+
+    d_preds = softmax(preds.copy()) - mask
 
     return loss, d_preds
 
@@ -52,13 +63,11 @@ class Param:
 
 class ReLULayer:
     def __init__(self):
-        pass
+        self.mask = None
 
     def forward(self, X):
-        # TODO: Implement forward pass
-        # Hint: you'll need to save some information about X
-        # to use it later in the backward pass
-        raise Exception("Not implemented!")
+        self.mask = (X > 0)
+        return X * self.mask
 
     def backward(self, d_out):
         """
@@ -74,24 +83,28 @@ class ReLULayer:
         """
         # TODO: Implement backward pass
         # Your final implementation shouldn't have any loops
-        raise Exception("Not implemented!")
+        # print(d_out.shape, self.mask.shape)
+        d_result = d_out * self.mask
         return d_result
 
     def params(self):
         # ReLU Doesn't have any parameters
         return {}
 
+    def reset_grad(self):
+        pass
+
 
 class FullyConnectedLayer:
     def __init__(self, n_input, n_output):
+        #
         self.W = Param(0.001 * np.random.randn(n_input, n_output))
         self.B = Param(0.001 * np.random.randn(1, n_output))
         self.X = None
 
     def forward(self, X):
-        # TODO: Implement forward pass
-        # Your final implementation shouldn't have any loops
-        raise Exception("Not implemented!")
+        self.X = X.copy()
+        return X.dot(self.W.value) + self.B.value
 
     def backward(self, d_out):
         """
@@ -115,9 +128,15 @@ class FullyConnectedLayer:
         # It should be pretty similar to linear classifier from
         # the previous assignment
 
-        raise Exception("Not implemented!")
+        self.W.grad = self.X.transpose().dot(d_out)
+        E = np.ones(shape=(1, self.X.shape[0]))
+        self.B.grad = E.dot(d_out)
 
-        return d_input
+        return d_out.dot(self.W.value.transpose())
 
     def params(self):
         return {'W': self.W, 'B': self.B}
+
+    def reset_grad(self):
+        self.W.grad = np.zeros_like(self.W.value)
+        self.B.grad = np.zeros_like(self.B.value)
