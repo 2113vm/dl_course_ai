@@ -140,13 +140,17 @@ class ConvolutionalLayer:
             row = []
             for x in range(out_width):
                 cube = self.X[:, y: y + self.filter_size, x: x + self.filter_size, :]
-                # cube = np.transpose(cube, axes=[0, 3, 2, 1]).reshape((batch_size, self.filter_size ** 2 * channels))
-                cube = cube.reshape((batch_size, self.filter_size ** 2 * channels))
-                out = cube.dot(self.W.value.reshape((self.filter_size ** 2 * self.in_channels, self.out_channels)))
-                row.append([out])
-            output.append(row)
-        return np.array(output, dtype=self.W.value.dtype).reshape((batch_size, out_height, out_width,
-                                                                   self.out_channels)) + self.B.value
+                cube = np.transpose(cube, axes=[0, 3, 2, 1]).reshape((batch_size, self.filter_size ** 2 * channels))
+                # cube = cube.reshape((batch_size, self.filter_size ** 2 * channels))
+                W_cube = np.transpose(self.W.value, axes=[2, 0, 1, 3])
+                out = cube.dot(W_cube.reshape((self.filter_size ** 2 * self.in_channels, self.out_channels)))
+                # out has shape (batch_size, out_channel)
+                row.append(np.array([out], dtype=self.W.value.dtype).reshape((batch_size, 1, 1, self.out_channels)))
+            output.append(np.dstack(row))
+        output = np.hstack(output)
+        output += self.B.value
+
+        return output
 
     def backward(self, d_out):
         # Hint: Forward pass was reduced to matrix multiply
@@ -173,22 +177,32 @@ class ConvolutionalLayer:
                 # X_cube is shape (batch_size, filter_size, filter_size, channels)
                 X_cube = self.X[:, y: y + self.filter_size, x: x + self.filter_size, :]
                 # X_cube is shape (batch_size, filter_size * filter_size * channels) => (batch_size, in_features)
-                X_cube = X_cube.reshape((batch_size, self.filter_size ** 2 * channels))
+                #                                   0, 1, 2, 3
+                X_cube = np.transpose(X_cube, axes=[0, 3, 1, 2]).reshape((batch_size, self.filter_size ** 2 * channels))
                 # W_cube is shape (filter_size * filter_size * in_channels, out_shannel) => (in_features, out_features)
-                W_cube = self.W.value.reshape((self.filter_size ** 2 * self.in_channels, self.out_channels))
+                W_cube = np.transpose(self.W.value, axes=[2, 0, 1, 3])
+                W_cube = W_cube.reshape((self.filter_size ** 2 * self.in_channels, self.out_channels))
                 # self.W.grad = self.X.transpose().dot(d_out)
                 # E = np.ones(shape=(1, self.X.shape[0]))
                 # self.B.grad = E.dot(d_out)
                 # d_out.dot(self.W.value.transpose())
                 # gradiants for dense layer reshaped to shape of W
-                self.W.grad += (X_cube.transpose().dot(d_cube)).reshape(self.W.value.shape)
-                E = np.ones(shape=(1, X_cube.shape[0]))
+                d_W_cube = (X_cube.transpose().dot(d_cube)).reshape(self.in_channels,
+                                                                    self.filter_size,
+                                                                    self.filter_size,
+                                                                    self.out_channels)
+
+                self.W.grad += np.transpose(d_W_cube, axes=[2, 1, 0, 3])
+                E = np.ones(shape=(1, batch_size))
                 self.B.grad += E.dot(d_cube).reshape((d_cube.shape[1]))
 
                 # d_cube : (batch_size, out_features) dot W_cube.transpose: (out_features, in_features)
                 # d_inp_xy is shape (batch_size, in_features)
-                d_inp_xy = d_cube.reshape((batch_size, self.out_channels)).dot(W_cube.transpose())
-                d_inp_xy = d_inp_xy.reshape((batch_size, self.filter_size, self.filter_size, channels))
+                d_inp_xy = d_cube.dot(W_cube.transpose())
+                d_inp_xy = d_inp_xy.reshape((batch_size, channels, self.filter_size, self.filter_size))
+                #                                       0, 1, 2, 3
+                d_inp_xy = np.transpose(d_inp_xy, axes=[0, 3, 2, 1])
+
                 d_inp[:, y: y + self.filter_size, x: x + self.filter_size, :] += d_inp_xy
                 window[:, y: y + self.filter_size, x: x + self.filter_size, :] += 1
 
@@ -297,11 +311,15 @@ if __name__ == '__main__':
 
     print(X.shape)
 
+    X_test = np.random.randint(0, 2, size=(2, 3, 3, 2)).astype(float)
+
     layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=1)
     result = layer.forward(X)
     # Note this kind of layer produces the same dimensions as input
     assert result.shape == X.shape, "Result shape: %s - Expected shape %s" % (result.shape, X.shape)
     d_input = layer.backward(np.ones_like(result))
     assert d_input.shape == X.shape
-    layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=1)
-    assert check_layer_gradient(layer, X)
+    layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=0)
+    print(X_test[(0, 0, 0, 1)])
+    print(X_test)
+    assert check_layer_gradient(layer, X_test)
