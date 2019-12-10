@@ -48,7 +48,7 @@ class Param:
         self.value = value
         self.grad = np.zeros_like(value)
 
-        
+
 class ReLULayer:
     def __init__(self):
         pass
@@ -78,20 +78,20 @@ class FullyConnectedLayer:
 
     def backward(self, d_out):
         # TODO copy from the previous assignment
-        
-        raise Exception("Not implemented!")        
+
+        raise Exception("Not implemented!")
         return d_input
 
     def params(self):
         return { 'W': self.W, 'B': self.B }
 
-    
+
 class ConvolutionalLayer:
     def __init__(self, in_channels, out_channels,
                  filter_size, padding):
         '''
         Initializes the layer
-        
+
         Arguments:
         in_channels, int - number of input channels
         out_channels, int - number of output channels
@@ -110,26 +110,43 @@ class ConvolutionalLayer:
         self.B = Param(np.zeros(out_channels))
 
         self.padding = padding
-
+        self.X = None
 
     def forward(self, X):
         batch_size, height, width, channels = X.shape
 
-        out_height = 0
-        out_width = 0
-        
+        self.X = X
+
+        if self.padding:
+            self.X = np.zeros((batch_size,
+                               height + 2 * self.padding,
+                               width + 2 * self.padding,
+                               channels), dtype=X.dtype)
+            self.X[:, self.padding: -self.padding, self.padding: -self.padding, :] = X
+
+        _, height, width, channels = self.X.shape
+
+        out_height = height - self.filter_size + 1
+        out_width = width - self.filter_size + 1
+
+        output = []
+
         # TODO: Implement forward pass
         # Hint: setup variables that hold the result
         # and one x/y location at a time in the loop below
-        
         # It's ok to use loops for going over width and height
         # but try to avoid having any other loops
         for y in range(out_height):
+            row = []
             for x in range(out_width):
-                # TODO: Implement forward pass for specific location
-                pass
-        raise Exception("Not implemented!")
-
+                cube = self.X[:, y: y + self.filter_size, x: x + self.filter_size, :]
+                # cube = np.transpose(cube, axes=[0, 3, 2, 1]).reshape((batch_size, self.filter_size ** 2 * channels))
+                cube = cube.reshape((batch_size, self.filter_size ** 2 * channels))
+                out = cube.dot(self.W.value.reshape((self.filter_size ** 2 * self.in_channels, self.out_channels)))
+                row.append([out])
+            output.append(row)
+        return np.array(output, dtype=self.W.value.dtype).reshape((batch_size, out_height, out_width,
+                                                                   self.out_channels)) + self.B.value
 
     def backward(self, d_out):
         # Hint: Forward pass was reduced to matrix multiply
@@ -137,7 +154,7 @@ class ConvolutionalLayer:
         # when you implemented FullyConnectedLayer
         # Just do it the same number of times and accumulate gradients
 
-        batch_size, height, width, channels = X.shape
+        batch_size, height, width, channels = self.X.shape
         _, out_height, out_width, out_channels = d_out.shape
 
         # TODO: Implement backward pass
@@ -146,14 +163,39 @@ class ConvolutionalLayer:
         # of the output
 
         # Try to avoid having any other loops here too
+        # d_inp = np.zeros((batch_size, height - 2 * self.padding, width - 2 * self.padding, channels))
+        d_inp = np.zeros(self.X.shape)
+        window = np.zeros(self.X.shape)
         for y in range(out_height):
             for x in range(out_width):
-                # TODO: Implement backward pass for specific location
-                # Aggregate gradients for both the input and
-                # the parameters (W and B)
-                pass
+                # d_cube is shape (batch_size, out_channel) => (batch_size, out_features)
+                d_cube = d_out[:, y, x, :]
+                # X_cube is shape (batch_size, filter_size, filter_size, channels)
+                X_cube = self.X[:, y: y + self.filter_size, x: x + self.filter_size, :]
+                # X_cube is shape (batch_size, filter_size * filter_size * channels) => (batch_size, in_features)
+                X_cube = X_cube.reshape((batch_size, self.filter_size ** 2 * channels))
+                # W_cube is shape (filter_size * filter_size * in_channels, out_shannel) => (in_features, out_features)
+                W_cube = self.W.value.reshape((self.filter_size ** 2 * self.in_channels, self.out_channels))
+                # self.W.grad = self.X.transpose().dot(d_out)
+                # E = np.ones(shape=(1, self.X.shape[0]))
+                # self.B.grad = E.dot(d_out)
+                # d_out.dot(self.W.value.transpose())
+                # gradiants for dense layer reshaped to shape of W
+                self.W.grad += (X_cube.transpose().dot(d_cube)).reshape(self.W.value.shape)
+                E = np.ones(shape=(1, X_cube.shape[0]))
+                self.B.grad += E.dot(d_cube).reshape((d_cube.shape[1]))
 
-        raise Exception("Not implemented!")
+                # d_cube : (batch_size, out_features) dot W_cube.transpose: (out_features, in_features)
+                # d_inp_xy is shape (batch_size, in_features)
+                d_inp_xy = d_cube.reshape((batch_size, self.out_channels)).dot(W_cube.transpose())
+                d_inp_xy = d_inp_xy.reshape((batch_size, self.filter_size, self.filter_size, channels))
+                d_inp[:, y: y + self.filter_size, x: x + self.filter_size, :] += d_inp_xy
+                window[:, y: y + self.filter_size, x: x + self.filter_size, :] += 1
+
+        if self.padding:
+            d_inp = d_inp[:, self.padding: -self.padding, self.padding: -self.padding, :]
+
+        return d_inp
 
     def params(self):
         return { 'W': self.W, 'B': self.B }
@@ -207,3 +249,59 @@ class Flattener:
     def params(self):
         # No params!
         return {}
+
+
+if __name__ == '__main__':
+
+    from assignments.assignment1.dataset import load_svhn, random_split_train_val
+    from assignments.assignment3.gradient_check import check_layer_gradient
+
+    def prepare_for_neural_network(train_X, test_X):
+        train_X = train_X.astype(np.float) / 255.0
+        test_X = test_X.astype(np.float) / 255.0
+
+        # Subtract mean
+        mean_image = np.mean(train_X, axis=0)
+        train_X -= mean_image
+        test_X -= mean_image
+
+        return train_X, test_X
+
+
+    train_X, train_y, test_X, test_y = load_svhn("../assignment1/data", max_train=10000, max_test=1000)
+    train_X, test_X = prepare_for_neural_network(train_X, test_X)
+    # Split train into train and val
+    train_X, train_y, val_X, val_y = random_split_train_val(train_X, train_y, num_val=1000)
+
+    X = np.array([
+        [
+            [[1.0, 0.0], [2.0, 1.0]],
+            [[0.0, -1.0], [-1.0, -2.0]]
+        ]
+        ,
+        [
+            [[0.0, 1.0], [1.0, -1.0]],
+            [[-2.0, 2.0], [-1.0, 0.0]]
+        ]
+    ])
+
+    # X = np.array([
+    #     [
+    #         [[1.0, 0.0]]
+    #     ]
+    #     ,
+    #     [
+    #         [[0.0, 1.0]]
+    #     ]
+    # ])
+
+    print(X.shape)
+
+    layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=1)
+    result = layer.forward(X)
+    # Note this kind of layer produces the same dimensions as input
+    assert result.shape == X.shape, "Result shape: %s - Expected shape %s" % (result.shape, X.shape)
+    d_input = layer.backward(np.ones_like(result))
+    assert d_input.shape == X.shape
+    layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=1)
+    assert check_layer_gradient(layer, X)
