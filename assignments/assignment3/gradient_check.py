@@ -65,11 +65,18 @@ def check_layer_gradient(layer, x, delta=1e-5, tol=1e-4):
     Returns:
       bool indicating whether gradients match or not
     """
+    # output is 2 1 1 2
     output = layer.forward(x)
     output_weight = np.random.randn(*output.shape)
 
     def helper_func(x):
         output = layer.forward(x)
+        # loss is a weight sum of output: loss = max_el1 * w1 + max_el2 * w2 + ...
+        # loss doesn't change if was changed not maximum element
+        # if was changed maximum element than loss' = max_el1' * w1 + max_el2 * w2 + ...
+        # then diff is (loss+) - (loss-) = ((max_el+) - (max_el-)) * w1
+        # and dloss is ((max_el+) - (max_el-)) * w1 / (2 delta)
+        # if max_el+ = max_el + delta and max_el- = max_el - delta then ((max_el+) - (max_el-)) * w1 / (2 delta) = w1
         loss = np.sum(output * output_weight)
         d_out = np.ones_like(output) * output_weight
         grad = layer.backward(d_out)
