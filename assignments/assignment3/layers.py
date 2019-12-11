@@ -1,8 +1,11 @@
 import numpy as np
 
 
+from assignments.assignment1.linear_classifer import softmax, cross_entropy_loss
+
+
 def l2_regularization(W, reg_strength):
-    '''
+    """
     Computes L2 regularization loss on weights and its gradient
 
     Arguments:
@@ -12,15 +15,16 @@ def l2_regularization(W, reg_strength):
     Returns:
       loss, single value - l2 regularization loss
       gradient, np.array same shape as W - gradient of weight by l2 loss
-    '''
-    # TODO: Copy from previous assignment
-    raise Exception("Not implemented!")
+    """
+    # TODO: Copy from the previous assignment
+    loss = reg_strength * np.sum(W * W)
+    grad = reg_strength * 2 * W
 
     return loss, grad
 
 
-def softmax_with_cross_entropy(predictions, target_index):
-    '''
+def softmax_with_cross_entropy(preds, target_index):
+    """
     Computes softmax and cross-entropy loss for model predictions,
     including the gradient
 
@@ -33,10 +37,18 @@ def softmax_with_cross_entropy(predictions, target_index):
     Returns:
       loss, single value - cross-entropy loss
       dprediction, np array same shape as predictions - gradient of predictions by loss value
-    '''
-    # TODO copy from the previous assignment
-    raise Exception("Not implemented!")
-    return loss, dprediction
+    """
+    # TODO: Copy from the previous assignment
+    loss = cross_entropy_loss(softmax(preds.copy()), target_index)
+    mask = np.zeros(preds.shape)
+    if hasattr(target_index, '__len__'):
+        mask[np.arange(len(target_index)), target_index.reshape(1, -1)] = 1
+    else:
+        mask[target_index] = 1
+
+    d_preds = softmax(preds.copy()) - mask
+
+    return loss, d_preds
 
 
 class Param:
@@ -51,39 +63,83 @@ class Param:
 
 class ReLULayer:
     def __init__(self):
-        pass
+        self.mask = None
 
     def forward(self, X):
-        # TODO copy from the previous assignment
-        raise Exception("Not implemented!")
+        self.mask = (X > 0)
+        return X * self.mask
 
     def backward(self, d_out):
-        # TODO copy from the previous assignment
-        raise Exception("Not implemented!")
+        """
+        Backward pass
+
+        Arguments:
+        d_out, np array (batch_size, num_features) - gradient
+           of loss function with respect to output
+
+        Returns:
+        d_result: np array (batch_size, num_features) - gradient
+          with respect to input
+        """
+        # TODO: Implement backward pass
+        # Your final implementation shouldn't have any loops
+        # print(d_out.shape, self.mask.shape)
+        d_result = d_out * self.mask
         return d_result
 
     def params(self):
+        # ReLU Doesn't have any parameters
         return {}
+
+    def reset_grad(self):
+        pass
 
 
 class FullyConnectedLayer:
     def __init__(self, n_input, n_output):
+        #
         self.W = Param(0.001 * np.random.randn(n_input, n_output))
         self.B = Param(0.001 * np.random.randn(1, n_output))
         self.X = None
 
     def forward(self, X):
-        # TODO copy from the previous assignment
-        raise Exception("Not implemented!")
+        self.X = X.copy()
+        return X.dot(self.W.value) + self.B.value
 
     def backward(self, d_out):
-        # TODO copy from the previous assignment
+        """
+        Backward pass
+        Computes gradient with respect to input and
+        accumulates gradients within self.W and self.B
 
-        raise Exception("Not implemented!")
-        return d_input
+        Arguments:
+        d_out, np array (batch_size, n_output) - gradient
+           of loss function with respect to output
+
+        Returns:
+        d_result: np array (batch_size, n_input) - gradient
+          with respect to input
+        """
+        # TODO: Implement backward pass
+        # Compute both gradient with respect to input
+        # and gradients with respect to W and B
+        # Add gradients of W and B to their `grad` attribute
+
+        # It should be pretty similar to linear classifier from
+        # the previous assignment
+
+        self.W.grad = self.X.transpose().dot(d_out)
+        E = np.ones(shape=(1, self.X.shape[0]))
+        self.B.grad = E.dot(d_out)
+
+        return d_out.dot(self.W.value.transpose())
 
     def params(self):
-        return { 'W': self.W, 'B': self.B }
+        return {'W': self.W, 'B': self.B}
+
+    def reset_grad(self):
+        self.W.grad = np.zeros_like(self.W.value)
+        self.B.grad = np.zeros_like(self.B.value)
 
 
 class ConvolutionalLayer:
@@ -214,6 +270,10 @@ class ConvolutionalLayer:
     def params(self):
         return { 'W': self.W, 'B': self.B }
 
+    def reset_grad(self):
+        self.W.grad = np.zeros_like(self.W.value)
+        self.B.grad = np.zeros_like(self.B.value)
+
 
 class MaxPoolingLayer:
     def __init__(self, pool_size, stride):
@@ -250,11 +310,13 @@ class MaxPoolingLayer:
     def backward(self, d_out):
         # TODO: Implement maxpool backward pass
         batch_size, height, width, channels = self.X.shape
+        # _, _, _, cd_out
 
         output = np.zeros(self.X.shape, dtype=np.float32)
         for y_num, y in enumerate(range(0, height, self.stride)):
             for x_num, x in enumerate(range(0, width, self.stride)):
-                d_cube = d_out[:, y_num, x_num, :].reshape(batch_size, 1, 1, channels)
+                d_cube = d_out[:, y_num, x_num, :]
+                d_cube = d_cube.reshape(batch_size, 1, 1, channels)
                 X_cube = self.X[:, y: y + self.pool_size, x: x + self.pool_size, :]
                 d_cube_out = (X_cube == X_cube.max(axis=1).max(axis=1).reshape(batch_size, 1, 1, channels)) * d_cube
                 # print(X_cube == X_cube.max(axis=1).max(axis=1).reshape(batch_size, 1, 1, channels))
@@ -264,6 +326,9 @@ class MaxPoolingLayer:
 
     def params(self):
         return {}
+
+    def reset_grad(self):
+        pass
 
 
 class Flattener:
@@ -290,3 +355,6 @@ class Flattener:
     def params(self):
         # No params!
         return {}
+
+    def reset_grad(self):
+        pass
