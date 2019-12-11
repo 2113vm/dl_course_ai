@@ -283,7 +283,9 @@ class Flattener:
 
     def backward(self, d_out):
 
-        return d_out.reshape(self.X_shape).transpose(0, 2, 3, 1)
+        batch_size, height, width, channels = self.X_shape
+
+        return d_out.reshape((batch_size, channels, height, width)).transpose(0, 2, 3, 1)
 
     def params(self):
         # No params!
