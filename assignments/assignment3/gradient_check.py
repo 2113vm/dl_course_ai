@@ -44,8 +44,11 @@ def check_gradient(f, x, delta=1e-5, tol=1e-4):
         if not np.isclose(numeric_grad_at_ix, analytic_grad_at_ix, tol):
             print("Gradients are different at %s. Analytic: %2.5f, Numeric: %2.5f" % (
             ix, analytic_grad_at_ix, numeric_grad_at_ix))
-            return False
-
+            print(x_minus_delta, x_plus_delta, f_minus_delta, f_plus_delta,  sep='\n')
+            # return False
+        # else:
+        #     print("Gradients aren't different at %s. Analytic: %2.5f, Numeric: %2.5f" % (
+        #         ix, analytic_grad_at_ix, numeric_grad_at_ix))
         it.iternext()
 
     print("Gradient check passed!")
