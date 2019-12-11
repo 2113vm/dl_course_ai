@@ -233,12 +233,34 @@ class MaxPoolingLayer:
         # TODO: Implement maxpool forward pass
         # Hint: Similarly to Conv layer, loop on
         # output x/y dimension
-        raise Exception("Not implemented!")
+        self.X = X
+
+        output = []
+        for y in range(0, height, self.stride):
+            row = []
+            for x in range(0, width, self.stride):
+                X_cube = X[:, y: y + self.pool_size, x: x + self.pool_size, :]
+                row.append(X_cube.max(axis=1).max(axis=1).reshape(batch_size, 1, 1, channels))
+            row = np.dstack(row)
+            output.append(row)
+        output = np.hstack(output)
+
+        return output
 
     def backward(self, d_out):
         # TODO: Implement maxpool backward pass
         batch_size, height, width, channels = self.X.shape
-        raise Exception("Not implemented!")
+
+        output = np.zeros(self.X.shape, dtype=np.float32)
+        for y_num, y in enumerate(range(0, height, self.stride)):
+            for x_num, x in enumerate(range(0, width, self.stride)):
+                d_cube = d_out[:, y_num, x_num, :].reshape(batch_size, 1, 1, channels)
+                X_cube = self.X[:, y: y + self.pool_size, x: x + self.pool_size, :]
+                d_cube_out = (X_cube == X_cube.max(axis=1).max(axis=1).reshape(batch_size, 1, 1, channels)) * d_cube
+                # print(X_cube == X_cube.max(axis=1).max(axis=1).reshape(batch_size, 1, 1, channels))
+                # print(d_cube)
+                output[:, y: y + self.pool_size, x: x + self.pool_size, :] += d_cube_out.astype(np.float32)
+        return output
 
     def params(self):
         return {}
@@ -254,72 +276,15 @@ class Flattener:
         # TODO: Implement forward pass
         # Layer should return array with dimensions
         # [batch_size, hight*width*channels]
-        raise Exception("Not implemented!")
+
+        self.X_shape = X.shape
+
+        return np.transpose(X, axes=[0, 3, 1, 2]).reshape((batch_size, height * width * channels))
 
     def backward(self, d_out):
-        # TODO: Implement backward pass
-        raise Exception("Not implemented!")
+
+        return d_out.reshape(self.X_shape).transpose(0, 2, 3, 1)
 
     def params(self):
         # No params!
         return {}
-
-
-if __name__ == '__main__':
-
-    from assignments.assignment1.dataset import load_svhn, random_split_train_val
-    from assignments.assignment3.gradient_check import check_layer_gradient
-
-    def prepare_for_neural_network(train_X, test_X):
-        train_X = train_X.astype(np.float) / 255.0
-        test_X = test_X.astype(np.float) / 255.0
-
-        # Subtract mean
-        mean_image = np.mean(train_X, axis=0)
-        train_X -= mean_image
-        test_X -= mean_image
-
-        return train_X, test_X
-
-
-    train_X, train_y, test_X, test_y = load_svhn("../assignment1/data", max_train=10000, max_test=1000)
-    train_X, test_X = prepare_for_neural_network(train_X, test_X)
-    # Split train into train and val
-    train_X, train_y, val_X, val_y = random_split_train_val(train_X, train_y, num_val=1000)
-
-    X = np.array([
-        [
-            [[1.0, 0.0], [2.0, 1.0]],
-            [[0.0, -1.0], [-1.0, -2.0]]
-        ]
-        ,
-        [
-            [[0.0, 1.0], [1.0, -1.0]],
-            [[-2.0, 2.0], [-1.0, 0.0]]
-        ]
-    ])
-
-    # X = np.array([
-    #     [
-    #         [[1.0, 0.0]]
-    #     ]
-    #     ,
-    #     [
-    #         [[0.0, 1.0]]
-    #     ]
-    # ])
-
-    print(X.shape)
-
-    X_test = np.random.randint(0, 2, size=(2, 3, 3, 2)).astype(float)
-
-    layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=1)
-    result = layer.forward(X)
-    # Note this kind of layer produces the same dimensions as input
-    assert result.shape == X.shape, "Result shape: %s - Expected shape %s" % (result.shape, X.shape)
-    d_input = layer.backward(np.ones_like(result))
-    assert d_input.shape == X.shape
-    layer = ConvolutionalLayer(in_channels=2, out_channels=2, filter_size=3, padding=0)
-    print(X_test[(0, 0, 0, 1)])
-    print(X_test)
-    assert check_layer_gradient(layer, X_test)
